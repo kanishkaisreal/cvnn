@@ -5,16 +5,16 @@ import numpy as np
 import timeit
 import datetime
 from pdb import set_trace
+import os 
+import plotly.graph_objects as go
+import plotly
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
+
 try:
-    import plotly.graph_objects as go
-    import plotly
     PLOTLY = True
 except ModuleNotFoundError:
     PLOTLY = False
-
-# tf.enable_v2_behavior()
-# tfds.disable_progress_bar()
-
 
 PLOTLY_CONFIG = {
     'scrollZoom': True,
@@ -41,20 +41,20 @@ def get_dataset():
     )
 
     ds_train = ds_train.map(normalize_img, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds_train = ds_train.cache()
-    # ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
+    # ds_train = ds_train.cache()
+    # # ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
     ds_train = ds_train.batch(128)
-    ds_train = ds_train.prefetch(tf.data.experimental.AUTOTUNE)
+    # ds_train = ds_train.prefetch(tf.data.experimental.AUTOTUNE)
 
     ds_test = ds_test.map(normalize_img, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds_test = ds_test.batch(128)
-    ds_test = ds_test.cache()
-    ds_test = ds_test.prefetch(tf.data.experimental.AUTOTUNE)
+    # ds_test = ds_test.cache()
+    # ds_test = ds_test.prefetch(tf.data.experimental.AUTOTUNE)
 
     return ds_train, ds_test
 
 
-def keras_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', init2='glorot_uniform', train_bias=True):
+def tensorflow_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', init2='glorot_uniform', train_bias=True):
     tf.random.set_seed(24)
     # https://www.tensorflow.org/datasets/keras_example
     model = tf.keras.models.Sequential([
@@ -190,15 +190,15 @@ def test_mnist():
     
 
 if __name__ == "__main__":
-    from importlib import reload
-    import os
-    import tensorflow
-    reload(tensorflow)
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    test_mnist()
+#    from importlib import reload
+#    import os
+#    import tensorflow
+#    reload(tensorflow)
+
+#    test_mnist()
     # test_mnist_montecarlo()
-    # ds_train, ds_test = get_dataset()
-    # keras_fit(ds_train, ds_test, train_bias=False)
-    # own_fit(ds_train, ds_test)
+    ds_train, ds_test = get_dataset()
+    tensorflow_fit(ds_train, ds_test, train_bias=False)
+    own_fit(ds_train, ds_test)
 
 
