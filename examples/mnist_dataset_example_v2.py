@@ -99,6 +99,13 @@ def own_complex_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', ini
                             use_bias=False, init_technique='zero_imag'),
         tf.keras.layers.Activation('softmax')
     ])
+
+    # model = tf.keras.models.Sequential([
+    #     layers.ComplexFlatten(input_shape=(28, 28, 1), dtype=np.float32),
+    #     layers.ComplexDense(128, activation='cart_relu', dtype=np.float32, kernel_initializer=init1),
+    #     layers.ComplexDense(10, activation='softmax_real_with_abs', dtype=np.float32, kernel_initializer=init2)
+    # ])
+
     model.compile(
         loss='sparse_categorical_crossentropy',
         optimizer=tf.keras.optimizers.Adam(0.001),
@@ -127,39 +134,6 @@ def own_complex_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', ini
     stop = timeit.default_timer()
     return history, stop - start, logs
 
-
-def own_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', init2='glorot_uniform'):
-    tf.random.set_seed(24)
-    model = tf.keras.models.Sequential([
-        layers.ComplexFlatten(input_shape=(28, 28, 1), dtype=np.float32),
-        layers.ComplexDense(128, activation='cart_relu', dtype=np.float32, kernel_initializer=init1),
-        layers.ComplexDense(10, activation='softmax_real_with_abs', dtype=np.float32, kernel_initializer=init2)
-    ])
-    model.compile(
-        loss='sparse_categorical_crossentropy',
-        optimizer=tf.keras.optimizers.Adam(0.001),
-        metrics=['accuracy'],
-    )
-    weigths = model.get_weights()
-    with tf.GradientTape() as tape:
-        # for elem, label in iter(ds_train):
-        elem, label = next(iter(ds_test))
-        loss = model.compiled_loss(y_true=label, y_pred=model(elem))    # calculate loss
-        gradients = tape.gradient(loss, model.trainable_weights)        # back-propagation
-    logs = {
-        'weights': weigths,
-        'loss': loss,
-        'gradients': gradients
-    }
-    start = timeit.default_timer()
-    history = model.fit(
-        ds_train,
-        epochs=6,
-        validation_data=ds_test,
-        verbose=verbose, shuffle=False
-    )
-    stop = timeit.default_timer()
-    return history, stop - start, logs
 
 
 def test_mnist():
@@ -197,8 +171,8 @@ if __name__ == "__main__":
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
     test_mnist()
     # test_mnist_montecarlo()
-    # ds_train, ds_test = get_dataset()
+    ds_train, ds_test = get_dataset()
     # keras_fit(ds_train, ds_test, train_bias=False)
-    # own_fit(ds_train, ds_test)
+    own_complex_fit(ds_train, ds_test)
 
 
