@@ -1,9 +1,12 @@
+from tensorflow.keras.utils import to_categorical
 import tensorflow as tf
 import tensorflow_datasets as tfds
 from cvnn import layers
+from cvnn import losses
 import numpy as np
 import timeit
 import datetime
+from cvnn import metrics
 from pdb import set_trace
 try:
     import plotly.graph_objects as go
@@ -11,7 +14,9 @@ try:
     PLOTLY = True
 except ModuleNotFoundError:
     PLOTLY = False
-
+import matplotlib.pyplot as plt 
+from importlib import reload
+import os
 # tf.enable_v2_behavior()
 # tfds.disable_progress_bar()
 
@@ -20,6 +25,8 @@ PLOTLY_CONFIG = {
     'scrollZoom': True,
     'editable': True
 }
+
+os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 
 
 def cast_to_complex(image, label):
@@ -41,14 +48,14 @@ def get_dataset():
     )
 
     ds_train = ds_train.map(normalize_img, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    ds_train = ds_train.cache()
+    #ds_train = ds_train.cache()
     # ds_train = ds_train.shuffle(ds_info.splits['train'].num_examples)
     ds_train = ds_train.batch(128)
     ds_train = ds_train.prefetch(tf.data.experimental.AUTOTUNE)
 
     ds_test = ds_test.map(normalize_img, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     ds_test = ds_test.batch(128)
-    ds_test = ds_test.cache()
+    #ds_test = ds_test.cache()
     ds_test = ds_test.prefetch(tf.data.experimental.AUTOTUNE)
 
     return ds_train, ds_test
@@ -89,30 +96,56 @@ def keras_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', init2='gl
     return history, stop - start, logs
 
 
-def own_complex_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', init2='glorot_uniform'):
-    tf.random.set_seed(24)
+
+def complex_model_only_dense():
     model = tf.keras.models.Sequential([
         layers.ComplexFlatten(input_shape=(28, 28, 1), dtype=np.complex64),
-        layers.ComplexDense(128, activation='cart_relu', dtype=np.complex64, kernel_initializer=init1,
+        layers.ComplexDense(128, activation='cart_relu', dtype=np.complex64, kernel_initializer='glorot_uniform',
                             use_bias=False, init_technique='zero_imag'),
-        layers.ComplexDense(10, activation='cast_to_real', dtype=np.complex64, kernel_initializer=init2,
+        layers.ComplexDense(10, activation='cast_to_real', dtype=np.complex64, kernel_initializer='glorot_uniform',
                             use_bias=False, init_technique='zero_imag'),
         tf.keras.layers.Activation('softmax')
     ])
-
     # model = tf.keras.models.Sequential([
     #     layers.ComplexFlatten(input_shape=(28, 28, 1), dtype=np.float32),
     #     layers.ComplexDense(128, activation='cart_relu', dtype=np.float32, kernel_initializer=init1),
     #     layers.ComplexDense(10, activation='softmax_real_with_abs', dtype=np.float32, kernel_initializer=init2)
     # ])
 
+    model.summary() 
+    
+    return model 
+
+def complex_model_conv2d():
+    tf.random.set_seed(1)
+    init = 'ComplexGlorotUniform'
+    acti = 'cart_relu'
+    model = tf.keras.models.Sequential()
+    model.add(layers.ComplexInput(input_shape=(28, 28, 1)))                     # Always use ComplexInput at the start
+    model.add(layers.ComplexConv2D(32, (3, 3), activation=acti, input_shape=(32, 32, 3), kernel_initializer=init))
+    model.add(layers.ComplexMaxPooling2D((2, 2)))
+    model.add(layers.ComplexConv2D(64, (3, 3), activation=acti, kernel_initializer=init))
+    model.add(layers.ComplexMaxPooling2D((2, 2)))
+    model.add(layers.ComplexConv2D(64, (3, 3), activation=acti, kernel_initializer=init))
+    model.add(layers.ComplexFlatten())
+    model.add(layers.ComplexDense(64, activation=acti, kernel_initializer=init))
+    model.add(layers.ComplexDense(10, activation='cart_softmax', kernel_initializer=init))
+    
+    model.summary()    
+    return model 
+    
+    
+def own_complex_fit_dense(ds_train, ds_test, verbose=True):
+    tf.random.set_seed(24)
+    
+    model  = complex_model_only_dense() 
     model.compile(
         loss='sparse_categorical_crossentropy',
         optimizer=tf.keras.optimizers.Adam(0.001),
         metrics=['accuracy'],
     )
-    # ds_train = ds_train.map(cast_to_complex)
-    # ds_test = ds_test.map(cast_to_complex)
+    ds_train = ds_train.map(cast_to_complex)
+    ds_test = ds_test.map(cast_to_complex)
     weigths = model.get_weights()
     with tf.GradientTape() as tape:
         # for elem, label in iter(ds_train):
@@ -134,6 +167,51 @@ def own_complex_fit(ds_train, ds_test, verbose=True, init1='glorot_uniform', ini
     stop = timeit.default_timer()
     return history, stop - start, logs
 
+def own_complex_fit_conv2d(epochs= 5):
+    tf.random.set_seed(24)
+
+    model = complex_model_conv2d()
+    model.compile(optimizer='sgd', 
+                      loss=losses.ComplexAverageCrossEntropy(),
+                      metrics=metrics.ComplexCategoricalAccuracy())
+    
+    (train_images, train_labels), (test_images, test_labels) = tf.keras.datasets.mnist.load_data()
+         
+    train_images, test_images = train_images.astype(dtype=np.complex64) / 255.0, test_images.astype(dtype=np.complex64) / 255.0
+    train_labels = to_categorical(train_labels, 10)
+    test_labels = to_categorical(test_labels, 10)
+    
+    tic = timeit.default_timer()
+    history = model.fit(
+        train_images, 
+        train_labels, 
+        epochs=epochs, 
+        validation_data=(test_images, test_labels),
+        batch_size=128,
+        shuffle=False
+    )
+    toc = timeit.default_timer()
+    
+    print('total training time', (toc-tic))
+    print(history.history.keys())
+    #  "Accuracy"
+    plt.plot(history.history['complex_categorical_accuracy'])
+    plt.plot(history.history['val_complex_categorical_accuracy'])
+    plt.title('model accuracy')
+    plt.ylabel('accuracy')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'validation'], loc='upper left')
+    plt.show()
+    # "Loss"
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('model loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'validation'], loc='upper left')
+    plt.show()
+    
+    
 
 
 def test_mnist():
@@ -153,7 +231,7 @@ def test_mnist():
     # DO AGAIN TO USE BIAS
     keras_hist, keras_time, keras_logs = keras_fit(ds_train, ds_test)
     keras_weigths = keras_logs['weights']
-    own_hist, own_time, own_logs = own_fit(ds_train, ds_test)
+    own_hist, own_time, own_logs = own_complex_fit(ds_train, ds_test)
     own_weigths = own_logs['weights']
     assert [np.all(k_w == o_w) for k_w, o_w in zip(keras_weigths, own_weigths)]
     assert keras_hist.history == own_hist.history, f"\n{keras_hist.history}\n !=\n{own_hist.history}"
@@ -164,15 +242,14 @@ def test_mnist():
     
 
 if __name__ == "__main__":
-    from importlib import reload
-    import os
-    import tensorflow
-    reload(tensorflow)
-    os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    test_mnist()
+    
+    epoch = 10 
+  
+    #test_mnist()
     # test_mnist_montecarlo()
     ds_train, ds_test = get_dataset()
     # keras_fit(ds_train, ds_test, train_bias=False)
-    own_complex_fit(ds_train, ds_test)
+    #own_complex_fit_dense(ds_train, ds_test)
+    own_complex_fit_conv2d(epochs = epoch)
 
 

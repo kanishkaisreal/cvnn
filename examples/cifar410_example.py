@@ -130,4 +130,5 @@ if __name__ == "__main__":
     import tensorflow
     reload(tensorflow)
     os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
-    test_cifar10()
+    own_complex_fit()
+    #  test_cifar10()
